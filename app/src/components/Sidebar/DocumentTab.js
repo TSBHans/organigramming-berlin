@@ -91,6 +91,9 @@ const DocumentTab = ({ data, sendDataUp }) => {
           inline: true,
         },
       },
+      paperSize: {
+        "ui:widget": "hidden",
+      },
       uri: {
         "ui:headless": true,
         "ui:field": "UriSearch",
