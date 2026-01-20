@@ -193,7 +193,14 @@ const MDEditorWidget = (props) => {
           commands.link,
           commands.code,
           commands.divider,
-          commands.list,
+          commands.group(
+            [commands.unorderedListCommand, commands.orderedListCommand],
+            {
+              name: "list",
+              groupName: "list",
+              buttonProps: { "aria-label": "Insert list" },
+            }
+          ),
         ]}
         placeholder={placeholder}
         required={required}
