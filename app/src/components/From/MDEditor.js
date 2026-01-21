@@ -193,7 +193,8 @@ const MDEditorWidget = (props) => {
           commands.link,
           commands.code,
           commands.divider,
-          commands.list,
+          commands.unorderedList,
+          commands.orderedList,
         ]}
         placeholder={placeholder}
         required={required}
