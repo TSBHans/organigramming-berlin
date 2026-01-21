@@ -181,6 +181,20 @@
               "default": "none",
               "enum": ["none", "grid2"],
               "enumNames": ["Untereinander", "2 Reihen"]
+            },
+            "position": {
+              "type": "object",
+              "title": "Position",
+              "properties": {
+                "x": {
+                  "type": "number",
+                  "default": 0
+                },
+                "y": {
+                  "type": "number",
+                  "default": 0
+                }
+              }
             }
           },
           "title": "Gestaltung"

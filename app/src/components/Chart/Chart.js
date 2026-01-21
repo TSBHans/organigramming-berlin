@@ -12,15 +12,16 @@ import { v4 as uuidv4 } from "uuid";
 import getURI from "../../services/getURI";
 
 const Chart = forwardRef(({ data, update, sendDataUp, setSelected }, ref) => {
-  const orgchart = useRef();
+  const chartRef = useRef();
 
   useImperativeHandle(ref, () => ({
-    exportTo: (fileName, fileextension, includeLogo, vectorPdf) => {
-      orgchart.current.exportTo(
+    exportTo: (fileName, fileextension, includeLogo, chartData, pdfType) => {
+      chartRef.current.exportTo(
         fileName,
         fileextension,
         includeLogo,
-        vectorPdf
+        chartData,
+        pdfType
       );
     },
     demoContexMenu: (enable, nodeId = "") => {
@@ -43,10 +44,10 @@ const Chart = forwardRef(({ data, update, sendDataUp, setSelected }, ref) => {
       }
     },
     resetViewHandler: () => {
-      orgchart.current.resetViewHandler();
+      chartRef.current.resetViewHandler();
     },
-    get orgchart() {
-      return orgchart.current;
+    demoDragMode: (enable, nodeId = "") => {
+      chartRef.current.demoDragMode(enable, nodeId);
     },
   }));
 
@@ -64,7 +65,6 @@ const Chart = forwardRef(({ data, update, sendDataUp, setSelected }, ref) => {
   const readSelectedNode = (nodeData) => {
     setSelected(nodeData);
     setSelectedNode(nodeData);
-    // }
   };
 
   const clearSelectedNode = () => {
@@ -89,12 +89,23 @@ const Chart = forwardRef(({ data, update, sendDataUp, setSelected }, ref) => {
     });
   };
 
+  const getNewNodePosition = () => {
+    if (selectedNode?.layout?.position) {
+      return {
+        x: selectedNode.layout.position.x + 280,
+        y: selectedNode.layout.position.y + 220,
+      };
+    }
+    return { x: 0, y: 0 };
+  };
+
   const getNewNode = () => {
     return {
       type: "",
       name: "Organisation",
       id: "n" + uuidv4(),
       uri: { uri: getURI("organisation") },
+      layout: { style: "default", position: getNewNodePosition() },
     };
   };
 
@@ -183,18 +194,17 @@ const Chart = forwardRef(({ data, update, sendDataUp, setSelected }, ref) => {
     >
       <OrganizationChart
         tabIndex="0"
-        ref={orgchart}
+        ref={chartRef}
         data={ds}
         update={update}
         collapsible={false}
-        // multipleSelect={isMultipleSelect}
         onClickNode={readSelectedNode}
         onClickChart={clearSelectedNode}
         sendDataUp={onChanged}
         onAddInitNode={onAddInitNode}
         onContextMenu={onContextMenu}
         onCloseContextMenu={onCloseContextMenu}
-        onOpenDocument={(e) => {
+        onOpenDocument={() => {
           setSelected("document");
         }}
         pan={true}

@@ -1,0 +1,237 @@
+@import "../../../node_modules/bootstrap/scss/functions";
+@import "../../theme";
+
+.oc-node {
+  $currentColor: $primary;
+  box-sizing: border-box;
+  display: inline-block;
+  position: relative;
+  margin: 0 4px;
+  transition: box-shadow 300ms ease-out, opacity 300ms ease-in-out;
+
+  &:hover {
+    cursor: pointer;
+  }
+
+  .oc-container {
+    font-size: 1rem;
+    width: 14rem;
+    background-color: $currentColor;
+    padding: 2px;
+    border-radius: $border-radius;
+    outline-width: 3;
+    outline-color: transparent;
+    transition-timing-function: ease-out;
+    transition: box-shadow 100ms, transform 100ms, outline-color 100ms;
+    box-shadow: rgba($gray-600, 0.2) 0px 1px 2px;
+    overflow-wrap: break-word;
+
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: rgba($gray-600, 0.5) 0px 8px 24px;
+    }
+
+    &.grid {
+      width: auto;
+      min-width: 14rem;
+    }
+
+    .oc-heading {
+      width: 100%;
+      padding: 0.5rem;
+      margin: 0;
+      min-height: 20px;
+      font-size: 0.75em;
+      font-weight: bold;
+      overflow: hidden;
+      text-align: left;
+      background-color: $currentColor;
+      color: #fff;
+
+      h1 {
+        font-size: 1em;
+      }
+      h2 {
+        font-size: 0.75em;
+      }
+      h3 {
+        font-size: 0.7em;
+        font-style: italic;
+        margin-bottom: 0;
+      }
+    }
+
+    .oc-content {
+      padding: 0.75rem;
+      width: 100%;
+      max-width: 100%;
+      font-size: 0.625rem;
+      color: $body-color;
+      text-align: left;
+      background-color: $white;
+
+      .grid-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+
+        ul {
+          width: 13.1rem;
+        }
+      }
+
+      ul.departments,
+      ul.positions,
+      ul.person,
+      ul.contact {
+        display: block;
+        padding-left: 0;
+        margin: 0;
+        list-style: none;
+
+        li {
+          width: 100%;
+          display: block;
+        }
+      }
+
+      ul.departments {
+        padding-top: 0.3rem;
+        padding-bottom: 0.2rem;
+        padding-left: 0.7rem;
+        padding-right: 0.7rem;
+
+        h3 {
+          font-size: 1.15em;
+          font-weight: bold;
+        }
+        .name {
+          display: inline-block;
+          font-size: 0.7em;
+          font-weight: bold;
+          margin-bottom: 0;
+        }
+        .position {
+          display: block;
+        }
+      }
+
+      ul.positions {
+        h3 {
+          font-size: 0.75em;
+          font-weight: bold;
+        }
+        .name {
+          display: inline-block;
+          font-size: 1em;
+          font-weight: normal;
+          margin-bottom: 0;
+        }
+        .position {
+          font-size: 0.75em;
+          display: block;
+        }
+      }
+
+      ul.person {
+        h4 {
+          font-size: 0.75em;
+          font-weight: bold;
+        }
+        .name {
+          display: inline-block;
+          font-size: 1.15em;
+          font-weight: bold;
+          margin-bottom: 0;
+        }
+        .position {
+          font-size: 0.75em;
+          display: block;
+        }
+      }
+
+      ul.contact {
+        svg {
+          width: auto;
+          height: 1em;
+        }
+        h3 {
+          font-size: 0.5em;
+          font-weight: bold;
+        }
+        .position {
+          display: block;
+        }
+      }
+    }
+  }
+
+  &.emphasized {
+    $supCurrentColor: lighten($currentColor, 5%);
+    h4.person {
+      font-size: 1.55em;
+      font-weight: bold;
+      margin-bottom: 0.15em;
+    }
+    .oc-container {
+      width: 17rem;
+      &.grid {
+        width: auto;
+      }
+      font-size: 1.5rem;
+      background-color: $supCurrentColor;
+      .oc-heading {
+        background-color: $supCurrentColor;
+      }
+      .oc-content {
+        ul.person {
+          .name {
+            font-size: 1.35em;
+          }
+        }
+      }
+    }
+  }
+
+  &.light {
+    font-size: 0.75rem;
+    $supCurrentColor: rgb(95, 99, 109);
+    .oc-container {
+      background-color: $supCurrentColor;
+      .oc-heading {
+        background-color: $supCurrentColor;
+      }
+      .oc-content {
+        color: $supCurrentColor;
+      }
+    }
+  }
+
+  &.hide {
+    font-size: 0.75rem;
+    $supCurrentColor: $currentColor;
+    .oc-container {
+      background-color: $supCurrentColor;
+      height: 1rem;
+      width: 0rem;
+      border-radius: 10px;
+      .oc-heading {
+        display: none;
+      }
+      .oc-content {
+        display: none;
+        color: $supCurrentColor;
+      }
+    }
+  }
+}
+
+.react-flow__node.selected .oc-container {
+  outline: 3px solid rgba(25, 118, 210, 0.5);
+  transform: translateY(-1px);
+  box-shadow: rgba(0, 0, 0, 0.25) 0px 8px 24px;
+}
+
+.oc-handle {
+  opacity: 0;
+}

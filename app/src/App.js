@@ -150,7 +150,7 @@ const App = () => {
       // Update state to advance the tour
       const stepIndex = index + (action === ACTIONS.PREV ? -1 : 1);
       setState({ stepIndex: stepIndex });
-      chart.current.orgchart.demoDragMode(false);
+      chart.current.demoDragMode(false);
       chart.current.demoContexMenu(false, "n3");
       chart.current.resetViewHandler();
       setSelected(null);
@@ -174,7 +174,7 @@ const App = () => {
           selectElementUntilExists("organisation-tab");
         }
       } else if (stepIndex === 9) {
-        chart.current.orgchart.demoDragMode(true, "n6");
+        chart.current.demoDragMode(true, "n6");
       } else if (stepIndex === 10) {
         chart.current.demoContexMenu(true, "n3");
       }
@@ -184,7 +184,7 @@ const App = () => {
       setState({ run: false });
       setSelected(null);
       chart.current.demoContexMenu(false, "n3");
-      chart.current.orgchart.demoDragMode(false);
+      chart.current.demoDragMode(false);
     }
   };
 

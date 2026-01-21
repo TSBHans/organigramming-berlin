@@ -8,17 +8,23 @@ import React, {
 
 import { Button, ButtonGroup } from "react-bootstrap";
 import PropTypes from "prop-types";
-import MDEditor from "@uiw/react-md-editor";
-import rehypeSanitize from "rehype-sanitize";
-import { selectNodeService, formatDate } from "../../services/service";
-import JSONDigger from "../../services/jsonDigger";
-import { toPng, toBlob, toJpeg, toSvg } from "html-to-image";
-// import * as htmlToImage from "html-to-image";
-// import { elementToSVG, inlineResources } from "dom-to-svg";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  getNodesBounds,
+  getViewportForBounds,
+} from "reactflow";
+import { toPng, toSvg } from "html-to-image";
 import jsPDF from "jspdf";
-import ChartNode from "./ChartNode";
+import FlowNode from "./FlowNode";
+import DocumentHeaderNode from "./DocumentHeaderNode";
+import DocumentNoteNode from "./DocumentNoteNode";
+import "reactflow/dist/style.css";
 import "./ChartContainer.scss";
 import { exportRDF } from "../../services/exportRDF";
+import JSONDigger from "../../services/jsonDigger";
+import { selectNodeService } from "../../services/service";
 
 import "../../services/registerFiles";
 
@@ -54,19 +60,61 @@ const defaultProps = {
   multipleSelect: false,
 };
 
+const a4Dimensions = {
+  portrait: { width: 2480, height: 3508 },
+  landscape: { width: 3508, height: 2480 },
+};
+
+const buildFlowElements = (organisations) => {
+  const nodes = [];
+  const edges = [];
+  const baseX = 280;
+  const baseY = 220;
+
+  const walk = (organisation, parentId, level, index) => {
+    const position = organisation.layout?.position ?? {
+      x: index * baseX,
+      y: level * baseY,
+    };
+
+    nodes.push({
+      id: organisation.id,
+      type: "org",
+      position,
+      data: { organisation },
+    });
+
+    if (parentId) {
+      edges.push({
+        id: `${parentId}-${organisation.id}`,
+        source: parentId,
+        target: organisation.id,
+        type: "smoothstep",
+      });
+    }
+
+    if (organisation.organisations) {
+      organisation.organisations.forEach((child, childIndex) =>
+        walk(child, organisation.id, level + 1, childIndex)
+      );
+    }
+  };
+
+  organisations.forEach((organisation, index) =>
+    walk(organisation, null, 0, index)
+  );
+
+  return { nodes, edges };
+};
+
 const ChartContainer = forwardRef(
   (
     {
       data,
       update,
-      zoom,
-      zoomoutLimit,
-      zoominLimit,
       containerClass,
       chartClass,
       draggable,
-      collapsible,
-      multipleSelect,
       onClickNode,
       onClickChart,
       sendDataUp,
@@ -78,427 +126,237 @@ const ChartContainer = forwardRef(
     ref
   ) => {
     const container = useRef();
-    const chart = useRef();
-    const paper = useRef();
-    const topNode = useRef();
-
-    const [startX, setStartX] = useState(0);
-    const [startY, setStartY] = useState(0);
-    const [transform, setTransform] = useState("");
-    const [chartTransform, setChartTransform] = useState("");
-    const [enablePan, setEnablePan] = useState(true);
-    const [panning, setPanning] = useState(false);
-    const [dragging, setDragging] = useState(false);
+    const reactFlowWrapper = useRef();
+    const [nodes, setNodes] = useState([]);
+    const [edges, setEdges] = useState([]);
     const [exporting, setExporting] = useState(false);
-    const [sizeWarning, setSizeWarning] = useState(false);
-    const [paperSize, setPaperSize] = useState("");
-
-    const [node, setNode] = useState({
-      id: "n-root",
-      name: "TOP LEVEL",
-      layout: { style: "root" },
-      organisations: JSON.parse(JSON.stringify(data.organisations)),
-    });
-
-    const dsDigger = new JSONDigger(node, "id", "organisations");
+    const [reactFlowInstance, setReactFlowInstance] = useState(null);
 
     useEffect(() => {
-      resetViewHandler();
-      setTimeout(() => {
-        updateChartHandler();
-      }, 50);
-    }, []);
+      const { nodes: flowNodes, edges: flowEdges } = buildFlowElements(
+        data.organisations || []
+      );
 
-    useEffect(() => {
-      setNode({
-        id: "n-root",
-        name: "TOP LEVEL",
-        layout: { style: "root" },
-        organisations: JSON.parse(JSON.stringify(data.organisations)),
-      });
+      const headerNode = {
+        id: "document-header",
+        type: "documentHeader",
+        position: { x: 0, y: -240 },
+        data: { document: data.document, onOpenDocument },
+        draggable: false,
+        selectable: false,
+      };
 
-      setTimeout(() => {
-        updateChartHandler();
-      }, 50);
-
-      if (paperSize && paperSize !== data.document.paperSize) {
-        setPaperSize(data.document.paperSize);
-        resetViewHandler();
-      }
-    }, [update, data, paperSize]);
-
-    const changeHierarchy = async (draggedItemData, dropTargetId) => {
-      await dsDigger.removeNode(draggedItemData.id);
-      await dsDigger.addChildren(dropTargetId, draggedItemData);
-      sendDataUp({ ...data, organisations: [...dsDigger.ds.organisations] });
-    };
-
-    const clickChartHandler = (event) => {
-      if (!event.target.closest(".oc-node")) {
-        if (onClickChart) {
-          onClickChart();
-        }
-        selectNodeService.clearSelectedNodeInfo();
-        onCloseContextMenu();
-      }
-    };
-
-    const onDragNode = (e) => {
-      setDragging(e);
-      setEnablePan(!e);
-      onCloseContextMenu();
-    };
-
-    const panEndHandler = () => {
-      setPanning(false);
-    };
-
-    const panHandler = (e) => {
-      let newX = 0;
-      let newY = 0;
-      if (!e.targetTouches) {
-        // pand on desktop
-        newX = e.pageX - startX;
-        newY = e.pageY - startY;
-      } else if (e.targetTouches.length === 1) {
-        // pan on mobile device
-        newX = e.targetTouches[0].pageX - startX;
-        newY = e.targetTouches[0].pageY - startY;
-      } else if (e.targetTouches.length > 1) {
-        return;
-      }
-      if (transform === "") {
-        if (transform.indexOf("3d") === -1) {
-          setTransform("matrix(1,0,0,1," + newX + "," + newY + ")");
-        } else {
-          setTransform(
-            "matrix3d(1,0,0,0,0,1,0,0,0,0,1,0," + newX + ", " + newY + ",0,1)"
-          );
-        }
-      } else {
-        let matrix = transform.split(",");
-        if (transform.indexOf("3d") === -1) {
-          matrix[4] = newX;
-          matrix[5] = newY + ")";
-        } else {
-          matrix[12] = newX;
-          matrix[13] = newY;
-        }
-        setTransform(matrix.join(","));
-      }
-    };
-
-    const panStartHandler = (e) => {
-      onCloseContextMenu();
-      if (e.target.closest(".oc-node")) {
-        setPanning(false);
-        return;
-      } else {
-        setPanning(true);
-      }
-      let lastX = 0;
-      let lastY = 0;
-      if (transform !== "") {
-        let matrix = transform.split(",");
-        if (transform.indexOf("3d") === -1) {
-          lastX = parseInt(matrix[4]);
-          lastY = parseInt(matrix[5]);
-        } else {
-          lastX = parseInt(matrix[12]);
-          lastY = parseInt(matrix[13]);
-        }
-      }
-      if (!e.targetTouches) {
-        // pand on desktop
-        setStartX(e.pageX - lastX);
-        setStartY(e.pageY - lastY);
-      } else if (e.targetTouches.length === 1) {
-        // pan on mobile device
-        setStartX(e.targetTouches[0].pageX - lastX);
-        setStartY(e.targetTouches[0].pageY - lastY);
-      } else if (e.targetTouches.length > 1) {
-        return;
-      }
-    };
-
-    const updateViewScale = (newScale) => {
-      let matrix = [];
-      let targetScale = 1;
-      if (transform === "") {
-        setTransform("matrix(" + newScale + ", 0, 0, " + newScale + ", 0, 0)");
-      } else {
-        matrix = transform.split(",");
-        if (transform.indexOf("3d") === -1) {
-          targetScale = Math.abs(window.parseFloat(matrix[3]) * newScale);
-          if (targetScale > zoomoutLimit && targetScale < zoominLimit) {
-            matrix[0] = "matrix(" + targetScale;
-            matrix[3] = targetScale;
-            setTransform(matrix.join(","));
+      const noteNode = data.document?.note
+        ? {
+            id: "document-note",
+            type: "documentNote",
+            position: { x: 0, y: -60 },
+            data: { note: data.document.note, onOpenDocument },
+            draggable: false,
+            selectable: false,
           }
-        } else {
-          targetScale = Math.abs(window.parseFloat(matrix[5]) * newScale);
-          if (targetScale > zoomoutLimit && targetScale < zoominLimit) {
-            matrix[0] = "matrix3d(" + targetScale;
-            matrix[5] = targetScale;
-            setTransform(matrix.join(","));
-          }
-        }
+        : null;
+
+      const combinedNodes = noteNode
+        ? [headerNode, noteNode, ...flowNodes]
+        : [headerNode, ...flowNodes];
+
+      setNodes(combinedNodes);
+      setEdges(flowEdges);
+    }, [data, update, onOpenDocument]);
+
+    const updateNodePosition = async (nodeId, position) => {
+      const dsDigger = new JSONDigger(data, "id", "organisations");
+      const organisation = await dsDigger.findNodeById(nodeId);
+      const layout = organisation.layout
+        ? { ...organisation.layout, position }
+        : { style: "default", position };
+      organisation.layout = layout;
+      sendDataUp({ ...data, organisations: [...data.organisations] });
+    };
+
+    const handleNodeClick = (_, node) => {
+      if (node.type !== "org") {
+        return;
       }
+      if (onClickNode) {
+        onClickNode(node.data.organisation);
+      }
+    };
+
+    const handleNodeContextMenu = (event, node) => {
+      if (node.type !== "org") {
+        return;
+      }
+      event.preventDefault();
+      if (onClickNode) {
+        onClickNode(node.data.organisation);
+      }
+      onContextMenu(event);
+    };
+
+    const handlePaneClick = () => {
+      if (onClickChart) {
+        onClickChart();
+      }
+      selectNodeService.clearSelectedNodeInfo();
+      onCloseContextMenu();
     };
 
     const resetViewHandler = () => {
-      const containerWidth = chart.current.clientWidth,
-        containerHeight = chart.current.clientHeight,
-        chartWidth = chart.current.querySelector("#paper").clientWidth,
-        chartHeight = chart.current.querySelector("#paper").clientHeight;
-
-      let newScale = Math.min(
-        (containerWidth - 32) / chartWidth,
-        (containerHeight - 32) / chartHeight
-      );
-
-      newScale = newScale - 0.03;
-
-      setTransform(
-        "matrix(" +
-          newScale +
-          ", 0, 0, " +
-          newScale +
-          ", " +
-          (containerWidth - chartWidth) / 2 +
-          ", " +
-          (containerHeight - chartHeight * (1.98 - newScale)) / 2 +
-          ")"
-      );
+      reactFlowInstance?.fitView({ padding: 0.2 });
     };
 
-    const zoomHandler = (e) => {
-      let newScale = 1 + (e.deltaY > 0 ? -0.01 : 0.01);
-      updateViewScale(newScale);
-    };
-    const zoomInHandler = (e) => {
-      let newScale = 1 + 0.2;
-      updateViewScale(newScale);
-    };
-    const zoomOutHandler = (e) => {
-      let newScale = 1 - 0.2;
-      updateViewScale(newScale);
-    };
-
-    const updateChartHandler = () => {
-      const rootNode = chart.current.querySelector("#n-root");
-      let rootNodeHeight = 57;
-      if (rootNodeHeight) {
-        rootNodeHeight = rootNode.clientHeight;
+    const finalizeExport = (includeLogo) => {
+      if (!includeLogo) {
+        reactFlowWrapper.current?.classList.remove("hide-logo");
       }
-
-      const paperWidth =
-          chart.current.querySelector(".chart-container").clientWidth,
-        paperHeight =
-          chart.current.querySelector(".chart-container").clientHeight,
-        chartWidth = chart.current.querySelector(".chart").clientWidth,
-        chartHeight = chart.current.querySelector(".chart").clientHeight;
-      let newScale = Math.min(
-        paperWidth / chartWidth,
-        paperHeight / (chartHeight - rootNodeHeight)
-      );
-
-      //Minimum Scale
-      if (newScale < 0.75) {
-        newScale = 0.75;
-        setSizeWarning(true);
-      } else if (newScale > 1.2) {
-        //Maximum Scale
-        newScale = 1.2;
-        setSizeWarning(false);
-      } else {
-        setSizeWarning(false);
-      }
-
-      setChartTransform(
-        "matrix(" +
-          newScale +
-          ", 0, 0, " +
-          newScale +
-          ", " +
-          (paperWidth - chartWidth) / 2 +
-          ", " +
-          (paperHeight - chartHeight - rootNodeHeight) / 2 +
-          ")"
-      );
-    };
-
-    const exportSVG = async (node, exportFilename, userView) => {
-      // resetViewHandler();
-      setTimeout(() => {
-        toSvg(node).then(function (dataUrl) {
-          download(dataUrl, exportFilename, "svg");
-          resetChart({
-            node,
-            userView,
-          });
-        });
-      }, 1000);
-    };
-
-    const exportPDF = (node, exportFilename, userView) => {
-      const boundingClientRect = node.getBoundingClientRect();
-      const canvasWidth = Math.floor(boundingClientRect.width);
-      const canvasHeight = Math.floor(boundingClientRect.height);
-
-      toJpeg(node, { quality: 1, pixelRatio: 3 }).then(
-        function (dataUrl) {
-          const doc = new jsPDF({
-            orientation: data.document.paperOrientation,
-            unit: "px",
-            format: [canvasWidth, canvasHeight],
-          });
-          doc.addImage(dataUrl, "JPEG", 0, 0, canvasWidth, canvasHeight);
-          doc.save(exportFilename + ".pdf");
-
-          resetChart({
-            node,
-            userView,
-          });
-        },
-        // on error
-        () => {
-          resetChart({
-            node,
-            userView,
-          });
-        }
-      );
-    };
-
-    const download = (href, exportFilename, exportFileExtension) => {
-      const link = document.createElement("a");
-      link.href = href;
-      link.download = exportFilename + "." + exportFileExtension;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    };
-
-    const resetChart = ({ node, userView }) => {
-      node.style.background = userView.nodeBackground;
-      node.style.transform = userView.nodeTransform;
-      container.current.scrollLeft = userView.originalScrollLeft;
-      container.current.scrollTop = userView.originalScrollTop;
-
-      const logo = node.querySelector("#logo");
-      if (logo) {
-        logo.style.display = "block";
-      }
-
       setExporting(false);
     };
 
-    const exportPNG = (node, exportFilename, userView) => {
-      const isWebkit = "WebkitAppearance" in document.documentElement.style;
-      const isFf = !!window.sidebar;
-      const isEdge =
-        navigator.appName === "Microsoft Internet Explorer" ||
-        (navigator.appName === "Netscape" &&
-          navigator.appVersion.indexOf("Edge") > -1);
+    const exportToPng = async (
+      exportFilename,
+      bounds,
+      viewport,
+      size,
+      includeLogo
+    ) => {
+      const exportNode = reactFlowWrapper.current.querySelector(
+        ".react-flow__viewport"
+      );
+      const dataUrl = await toPng(exportNode, {
+        width: size.width,
+        height: size.height,
+        backgroundColor: "#ffffff",
+        style: {
+          width: `${size.width}px`,
+          height: `${size.height}px`,
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+        },
+      });
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `${exportFilename}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      finalizeExport(includeLogo);
+    };
 
-      // for old browser and not pdf export
-      if ((!isWebkit && !isFf) || isEdge) {
-        toBlob(node).then(
-          function (blob) {
-            window.navigator.msSaveBlob(blob, exportFilename + ".png");
-            resetChart({
-              node,
-              userView,
-            });
-          }, // on error
-          () => {
-            resetChart({
-              node,
-              userView,
-            });
-          }
-        );
-      } else {
-        //
-        toPng(node, { quality: 1, pixelRatio: 3 }).then(
-          function (dataUrl) {
-            download(dataUrl, exportFilename, "png");
-            resetChart({
-              node,
-              userView,
-            });
-          },
-          // on error
-          () => {
-            resetChart({
-              node,
-              userView,
-            });
-          }
-        );
-      }
+    const exportToSvg = async (
+      exportFilename,
+      bounds,
+      viewport,
+      size,
+      includeLogo
+    ) => {
+      const exportNode = reactFlowWrapper.current.querySelector(
+        ".react-flow__viewport"
+      );
+      const dataUrl = await toSvg(exportNode, {
+        width: size.width,
+        height: size.height,
+        backgroundColor: "#ffffff",
+        style: {
+          width: `${size.width}px`,
+          height: `${size.height}px`,
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+        },
+      });
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `${exportFilename}.svg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      finalizeExport(includeLogo);
+    };
+
+    const exportToPdf = async (
+      exportFilename,
+      bounds,
+      viewport,
+      size,
+      includeLogo
+    ) => {
+      const exportNode = reactFlowWrapper.current.querySelector(
+        ".react-flow__viewport"
+      );
+      const dataUrl = await toPng(exportNode, {
+        width: size.width,
+        height: size.height,
+        backgroundColor: "#ffffff",
+        style: {
+          width: `${size.width}px`,
+          height: `${size.height}px`,
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+        },
+      });
+
+      const doc = new jsPDF({
+        orientation: data.document.paperOrientation,
+        unit: "px",
+        format: "a4",
+      });
+      doc.addImage(dataUrl, "PNG", 0, 0, size.width, size.height);
+      doc.save(`${exportFilename}.pdf`);
+      finalizeExport(includeLogo);
     };
 
     useImperativeHandle(ref, () => ({
-      exportTo: (fileName, fileextension, includeLogo, data, pdfType) => {
+      exportTo: (fileName, fileextension, includeLogo, exportData) => {
         setExporting(true);
-
         selectNodeService.clearSelectedNodeInfo();
         const exportFilename = fileName || "OrgChart";
         const exportFileExtension = fileextension || "png";
-
-        const originalScrollLeft = container.current.scrollLeft;
-        container.current.scrollLeft = 0;
-        const originalScrollTop = container.current.scrollTop;
-        container.current.scrollTop = 0;
-        const canvas = chart.current.querySelector("#paper");
-        if (!includeLogo && data.document.logo) {
-          const logo = canvas.querySelector("#logo");
-          if (logo) {
-            logo.style.display = "none";
-          }
+        if (!includeLogo) {
+          reactFlowWrapper.current?.classList.add("hide-logo");
         }
 
-        const node = chart.current.querySelector("#paper");
-        const userView = {
-          originalScrollLeft: originalScrollLeft,
-          originalScrollTop: originalScrollTop,
-          nodeBackground: node.style.background,
-          nodeTransform: node.style.transform,
-        };
-
-        if (
-          exportFileExtension === "svg" ||
-          exportFileExtension === "pdf" ||
-          exportFileExtension === "png"
-        ) {
-          node.style.background = "#fff";
-          node.style.transform = "";
-          node.style.scrollLeft = 0;
-          node.style.scrollTop = 0;
+        if (exportFileExtension === "rdf") {
+          exportRDF(exportData);
+          finalizeExport(includeLogo);
+          return;
         }
 
-        if (exportFileExtension === "svg") {
-          exportSVG(node, exportFilename, userView, false).then(() => {
-            setExporting(false);
-          });
-        } else if (exportFileExtension === "rdf") {
-          exportRDF(data);
-          setExporting(false);
+        if (!reactFlowInstance) {
+          finalizeExport(includeLogo);
+          return;
+        }
+        const orientation = exportData.document.paperOrientation || "landscape";
+        const size =
+          orientation === "portrait"
+            ? a4Dimensions.portrait
+            : a4Dimensions.landscape;
+        const flowNodes = reactFlowInstance.getNodes();
+        const bounds = getNodesBounds(flowNodes);
+        const viewport = getViewportForBounds(
+          bounds,
+          size.width,
+          size.height,
+          0.1,
+          2
+        );
+
+        if (exportFileExtension === "png") {
+          exportToPng(exportFilename, bounds, viewport, size, includeLogo);
+        } else if (exportFileExtension === "svg") {
+          exportToSvg(exportFilename, bounds, viewport, size, includeLogo);
         } else if (exportFileExtension === "pdf") {
-          exportPDF(node, exportFilename, userView);
-        } else if (exportFileExtension === "png") {
-          exportPNG(node, exportFilename, userView, exportFileExtension);
+          exportToPdf(exportFilename, bounds, viewport, size, includeLogo);
         }
       },
       resetViewHandler: () => {
         resetViewHandler();
       },
-      demoDragMode: (enable, nodeId = "") => {
-        topNode.current.demoDragMode(enable, nodeId);
-      },
+      demoDragMode: () => {},
     }));
+
+    const nodeTypes = {
+      org: FlowNode,
+      documentHeader: DocumentHeaderNode,
+      documentNote: DocumentNoteNode,
+    };
 
     return (
       <>
@@ -507,16 +365,15 @@ const ChartContainer = forwardRef(
           className={
             "view-container " +
             containerClass +
-            (dragging ? " dragging" : "") +
-            (panning ? " panning" : "") +
-            (exporting ? "exporting" : "")
+            (exporting ? " exporting" : "")
           }
-          onWheel={zoom ? zoomHandler : undefined}
-          onMouseUp={panning ? panEndHandler : undefined}
         >
           <div className="navigation-container">
             <ButtonGroup aria-label="navigation" vertical>
-              <Button onClick={zoomInHandler} title="Herein zoomen">
+              <Button
+                onClick={() => reactFlowInstance?.zoomIn()}
+                title="Herein zoomen"
+              >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="16"
@@ -536,7 +393,10 @@ const ChartContainer = forwardRef(
                   />
                 </svg>
               </Button>
-              <Button onClick={zoomOutHandler} title="Heraus zoomen">
+              <Button
+                onClick={() => reactFlowInstance?.zoomOut()}
+                title="Heraus zoomen"
+              >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="16"
@@ -568,7 +428,7 @@ const ChartContainer = forwardRef(
                 >
                   <path
                     fillRule="evenodd"
-                    d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707zm4.344 0a.5.5 0 0 1 .707 0l4.096 4.096V11.5a.5.5 0 1 1 1 0v3.975a.5.5 0 0 1-.5.5H11.5a.5.5 0 0 1 0-1h2.768l-4.096-4.096a.5.5 0 0 1 0-.707zm0-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 0 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707zm-4.344 0a.5.5 0 0 1-.707 0L1.025 1.732V4.5a.5.5 0 0 1-1 0V.525a.5.5 0 0 1 .5-.5H4.5a.5.5 0 0 1 0 1H1.732l4.096 4.096a.5.5 0 0 1 0 .707z"
+                    d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707zm4.344 0a.5.5 0 0 1 .707 0l4.096 4.096V11.5a.5.5 0 1 1 1 0v3.975a.5.5 0 0 1-.5.5H11.5a.5.5 0 0 1 0-1h2.768l-4.096-4.096a.5.5 0 0 1 0-.707zm0-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 1 1 0V.525a.5.5 0 0 1 .5-.5H11.5a.5.5 0 0 1 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707zm-4.344 0a.5.5 0 0 1-.707 0L1.025 1.732V4.5a.5.5 0 0 1-1 0V.525a.5.5 0 0 1 .5-.5H4.5a.5.5 0 0 1 0 1H1.732l4.096 4.096a.5.5 0 0 1 0 .707z"
                   />
                 </svg>
               </Button>
@@ -576,137 +436,38 @@ const ChartContainer = forwardRef(
           </div>
 
           <div
-            ref={chart}
-            className={"editor " + chartClass + (exporting ? " exporting" : "")}
-            onClick={clickChartHandler}
-            onMouseDown={enablePan ? panStartHandler : undefined}
-            onMouseMove={enablePan && panning ? panHandler : undefined}
+            ref={reactFlowWrapper}
+            className={
+              "editor " + chartClass + (exporting ? " exporting" : "")
+            }
           >
-            <div
-              id="paper"
-              ref={paper}
-              className={`paper ${data.document.paperSize} ${data.document.paperOrientation}`}
-              style={{ transform: transform }}
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onInit={setReactFlowInstance}
+              onNodeClick={handleNodeClick}
+              onNodeContextMenu={handleNodeContextMenu}
+              onNodeDragStop={(_, node) => {
+                if (node.type !== "org") {
+                  return;
+                }
+                updateNodePosition(node.id, node.position);
+              }}
+              nodeTypes={nodeTypes}
+              onPaneClick={handlePaneClick}
+              nodesDraggable={draggable}
+              fitView
             >
-              <span
-                className="paper-size-label"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenDocument(true);
-                }}
-              >
-                {sizeWarning && (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="1em"
-                    height="1em"
-                    fill="danger"
-                    className="bi me-1 mb-1 bi-exclamation-triangle-fill"
-                    viewBox="0 0 16 16"
-                  >
-                    <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z" />{" "}
-                  </svg>
-                )}
-                {data.document.paperSize}
-                {data.document.paperOrientation === "landscape" && (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="1em"
-                    height="1em"
-                    fill="currentColor"
-                    className="bi ms-1 mb-1 bi-file-earmark"
-                    viewBox="0 0 16 16"
-                  >
-                    <path d="M4.5,2H14c1.1,0,2,0.9,2,2v8c0,1.1-0.9,2-2,2H2c-1.1,0-2-0.9-2-2V6.5L4.5,2z M4.5,5c0,0.8-0.7,1.5-1.5,1.5H1V12c0,0.6,0.4,1,1,1h12c0.6,0,1-0.4,1-1V4c0-0.6-0.4-1-1-1H4.5V5z" />
-                  </svg>
-                )}
-                {data.document.paperOrientation === "portrait" && (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="1em"
-                    height="1em"
-                    fill="currentColor"
-                    className="b ms-1 mb-1 bi-file-earmark"
-                    viewBox="0 0 16 16"
-                  >
-                    <path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5h-2z" />
-                  </svg>
-                )}
-              </span>
-              {data.document && (
-                <div className="title-container">
-                  <div className="cell">
-                    <Button
-                      className="btn-sm btn-edit btn-secondary btn-secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenDocument(true);
-                      }}
-                    >
-                      Bearbeiten
-                    </Button>
-                    {data.document.logo && (
-                      <img
-                        id="logo"
-                        alt="logo"
-                        style={{ height: "5rem", width: "auto" }}
-                        src={data.document.logo}
-                      />
-                    )}
-
-                    {data.document.title && (
-                      <div className="title-content">
-                        <h1>{data.document.title}</h1>
-                        {data.document.creator && (
-                          <span>{data.document.creator}</span>
-                        )}
-                        {data.document.version && (
-                          <span> {formatDate(data.document.version)}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-              <div className="chart-container">
-                <ul className="chart" style={{ transform: chartTransform }}>
-                  <ChartNode
-                    ref={topNode}
-                    data={node}
-                    level={0}
-                    index={0}
-                    update={update}
-                    draggable={draggable}
-                    collapsible={collapsible}
-                    multipleSelect={multipleSelect}
-                    changeHierarchy={changeHierarchy}
-                    onClickNode={onClickNode}
-                    onContextMenu={onContextMenu}
-                    onDragNode={onDragNode}
-                    onAddInitNode={onAddInitNode}
-                  />
-                </ul>
+              <Background gap={16} size={1} />
+              <Controls showInteractive={false} />
+            </ReactFlow>
+            {(!data.organisations || data.organisations.length === 0) && (
+              <div className="empty-canvas">
+                <Button variant="outline-success" onClick={() => onAddInitNode()}>
+                  Neue Organisation anlegen
+                </Button>
               </div>
-              {data.document.note && (
-                <div className="note-container">
-                  <div className="cell">
-                    <Button
-                      className="btn-sm btn-edit btn-secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenDocument(true);
-                      }}
-                    >
-                      Bearbeiten
-                    </Button>
-                    <MDEditor.Markdown
-                      source={data.document.note}
-                      rehypePlugins={[[rehypeSanitize]]}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
         <div className={`oc-mask ${exporting ? "" : "hidden"}`}>

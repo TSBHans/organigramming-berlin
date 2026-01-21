@@ -1,0 +1,74 @@
+@import "../../../node_modules/bootstrap/scss/functions";
+@import "../../theme";
+
+.document-node {
+  background: $white;
+  border-radius: $border-radius;
+  padding: 0.75rem;
+  min-width: 18rem;
+  box-shadow: rgba($gray-600, 0.2) 0px 1px 2px;
+  position: relative;
+
+  .btn-edit {
+    position: absolute;
+    top: -1.8rem;
+    left: 0;
+    opacity: 0;
+    transition: opacity 300ms ease-in-out;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border: none;
+    background-color: $gray-400;
+    color: $gray-600;
+
+    &:hover {
+      background-color: $gray-500;
+    }
+  }
+
+  &:hover {
+    .btn-edit {
+      opacity: 1;
+    }
+  }
+}
+
+.document-header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  text-align: right;
+  justify-content: flex-end;
+
+  .title-content {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+.document-note {
+  .wmde-markdown {
+    font-size: 12px;
+    h1,
+    h2,
+    h3,
+    h4 {
+      margin-top: 0.5em;
+      margin-bottom: 0.2em;
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+    p {
+      margin-bottom: 0.5em;
+    }
+    ul {
+      list-style-type: none;
+      li:not(:last-child) {
+        padding-right: 1rem;
+      }
+    }
+    a {
+      pointer-events: none;
+    }
+  }
+}
