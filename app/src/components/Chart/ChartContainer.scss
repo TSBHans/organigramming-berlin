@@ -166,6 +166,11 @@
       }
       .title-content {
         flex: 0 0 auto;
+
+        h1,
+        span {
+          white-space: pre-line;
+        }
       }
     }
     .note-container {

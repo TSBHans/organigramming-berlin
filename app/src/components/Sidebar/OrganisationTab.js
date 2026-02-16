@@ -12,6 +12,7 @@ import UriSearch from "../From/UriSearch";
 import MainOrganisation from "../From/MainOrganisation";
 
 import CustomDropdown from "../From/CustomDropdown";
+import ShiftEnterTextWidget from "../From/ShiftEnterTextWidget";
 
 import { checkErrors } from "../../services/checkErrors";
 
@@ -42,6 +43,10 @@ const OrganisationTab = ({ sendDataUp, selected, setSelected, dsDigger }) => {
     CustomDropdown: CustomDropdown,
   };
 
+  const widgets = {
+    shiftEnterText: ShiftEnterTextWidget,
+  };
+
   const schema = { ...definitions, ...properties };
   const uiSchema = {
     "ui:headless": true,
@@ -53,6 +58,15 @@ const OrganisationTab = ({ sendDataUp, selected, setSelected, dsDigger }) => {
       type: {
         "ui:placeholder": "Auswählen o. eingeben z.B. 'Abteilung'",
         "ui:field": CustomDropdown,
+      },
+      name: {
+        "ui:widget": "shiftEnterText",
+      },
+      altName: {
+        "ui:widget": "shiftEnterText",
+      },
+      purpose: {
+        "ui:widget": "shiftEnterText",
       },
       isMainOrganisation: {
         "ui:headless": true,
@@ -138,6 +152,12 @@ const OrganisationTab = ({ sendDataUp, selected, setSelected, dsDigger }) => {
           type: {
             "ui:placeholder": "z.B. Büro",
             "ui:field": CustomDropdown,
+          },
+          name: {
+            "ui:widget": "shiftEnterText",
+          },
+          purpose: {
+            "ui:widget": "shiftEnterText",
           },
           uri: {
             "ui:headless": true,
@@ -297,6 +317,7 @@ const OrganisationTab = ({ sendDataUp, selected, setSelected, dsDigger }) => {
         onChange={(e) => onChange(e)}
         onBlur={onBlur}
         fields={fields}
+        widgets={widgets}
         idPrefix={idPrefix}
         ArrayFieldTemplate={ArrayFieldTemplate}
         ObjectFieldTemplate={ObjectFieldTemplate}
