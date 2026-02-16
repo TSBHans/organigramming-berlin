@@ -3,6 +3,7 @@ import React, { useState, useRef } from "react";
 import FileSelect from "../From/FileSelect";
 import ObjectFieldTemplate from "../From/ObjectFieldTemplate";
 import MDEditorWidget from "../From/MDEditor";
+import ShiftEnterTextWidget from "../From/ShiftEnterTextWidget";
 import { getDefinitions } from "../../services/getDefinitions";
 import UriSearch from "../From/UriSearch";
 const definitions = getDefinitions();
@@ -72,6 +73,9 @@ const DocumentTab = ({ data, sendDataUp }) => {
       note: {
         title: "Fußzeile",
         "ui:widget": MDEditorWidget,
+      },
+      title: {
+        "ui:widget": ShiftEnterTextWidget,
       },
       logo: {
         "ui:widget": FileSelect,
