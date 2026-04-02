@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { getGenderedPosition } from "./service";
 
 const PAGE_MARGIN_X = 48;
 const PAGE_MARGIN_TOP = 56;
@@ -20,6 +21,11 @@ const personName = (person = {}) => {
     .filter(Boolean)
     .join(" ");
   return parts || "Nicht angegeben";
+};
+
+const positionTitle = (position = {}) => {
+  const rawPositionType = safe(position?.positionType) || "Position";
+  return getGenderedPosition(rawPositionType, position?.person?.gender) || rawPositionType;
 };
 
 const contactLines = (contact = {}) => {
@@ -191,10 +197,33 @@ export const exportAccessiblePdf = (data, exportFilename) => {
 
     writeLines(doc, metaLines, cursor, { indent: 8, fontSize: 11, after: 4 });
 
+    const childOrganisations = unit?.organisations || [];
+    if (childOrganisations.length > 1) {
+      const subOrgNames = childOrganisations
+        .map((child) => safe(child?.name))
+        .filter(Boolean);
+      const subOrgText =
+        subOrgNames.length > 0
+          ? ` Die direkt untergeordneten Einheiten sind: ${subOrgNames.join(", ")}.`
+          : "";
+      writeLines(
+        doc,
+        [
+          `Diese Organisationseinheit hat ${childOrganisations.length} direkt untergeordnete Organisationseinheiten.${subOrgText}`,
+        ],
+        cursor,
+        {
+          indent: 8,
+          fontSize: 11,
+          after: 2,
+        }
+      );
+    }
+
     if ((unit?.positions || []).length > 0) {
       writeLines(doc, ["Positionen:"], cursor, { indent: 8, fontStyle: "bold", fontSize: 11 });
       (unit.positions || []).forEach((position, positionIndex) => {
-        const positionType = safe(position?.positionType) || "Position";
+        const positionType = positionTitle(position);
         writeLines(
           doc,
           [`${positionIndex + 1}) ${positionType}: ${personName(position?.person)}`],
@@ -226,7 +255,7 @@ export const exportAccessiblePdf = (data, exportFilename) => {
         writeLines(doc, [prefix], cursor, { indent: 16, fontSize: 11 });
 
         (department?.positions || []).forEach((position, departmentPositionIndex) => {
-          const positionType = safe(position?.positionType) || "Position";
+          const positionType = positionTitle(position);
           writeLines(
             doc,
             [`${departmentIndex + 1}.${departmentPositionIndex + 1} ${positionType}: ${personName(position?.person)}`],
