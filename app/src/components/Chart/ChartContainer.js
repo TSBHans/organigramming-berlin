@@ -488,8 +488,9 @@ const ChartContainer = forwardRef(
           exportRDF(data);
           setExporting(false);
         } else if (exportFileExtension === "pdf-accessible") {
-          exportAccessiblePdf(data, exportFilename);
-          setExporting(false);
+          exportAccessiblePdf(data, exportFilename).finally(() => {
+            setExporting(false);
+          });
         } else if (exportFileExtension === "pdf") {
           exportPDF(node, exportFilename, userView);
         } else if (exportFileExtension === "png") {

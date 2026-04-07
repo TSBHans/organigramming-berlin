@@ -15,6 +15,9 @@ const HEADING_FONT_SIZES = {
   5: 12,
   6: 11,
 };
+const BERORGS_VOCAB_URL =
+  "https://raw.githubusercontent.com/berlin/lod-vocabulary/main/data/berorgs/berorgs.ttl";
+let vocabularyCommentCachePromise = null;
 
 const safe = (value) => (typeof value === "string" ? value.trim() : "");
 
@@ -76,6 +79,39 @@ const positionVocabularyLines = (position = {}) => {
     lines.push(`Prädikat rdfs:comment: ${position.positionStatus}`);
   }
   return lines;
+};
+
+const parseVocabularyComments = (turtleText = "") => {
+  const commentsByTerm = {};
+  const classBlockRegex = /berorgs:([A-Za-z0-9_]+)\s+a\s+owl:Class\s*;([\s\S]*?)\.\s*/g;
+
+  let match;
+  while ((match = classBlockRegex.exec(turtleText)) !== null) {
+    const term = match[1];
+    const block = match[2];
+    const germanCommentMatch =
+      block.match(/rdfs:comment\s+"""([\s\S]*?)"""@de\s*;/) ||
+      block.match(/rdfs:comment\s+"([^"]*)"@de\s*;/);
+    if (germanCommentMatch && germanCommentMatch[1]) {
+      commentsByTerm[term] = germanCommentMatch[1].trim().replace(/\s+/g, " ");
+    }
+  }
+  return commentsByTerm;
+};
+
+const getVocabularyComments = async () => {
+  if (!vocabularyCommentCachePromise) {
+    vocabularyCommentCachePromise = fetch(BERORGS_VOCAB_URL)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Could not fetch vocabulary (${response.status})`);
+        }
+        return response.text();
+      })
+      .then((ttl) => parseVocabularyComments(ttl))
+      .catch(() => ({}));
+  }
+  return vocabularyCommentCachePromise;
 };
 
 const contactLines = (contact = {}) => {
@@ -148,7 +184,7 @@ const writeLines = (doc, lines, cursor, options = {}) => {
   cursor.y += after;
 };
 
-export const exportAccessiblePdf = (data, exportFilename) => {
+export const exportAccessiblePdf = async (data, exportFilename) => {
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "pt",
@@ -158,6 +194,11 @@ export const exportAccessiblePdf = (data, exportFilename) => {
   const title = safe(data?.document?.title) || "Organigramm";
   const version = safe(data?.document?.version);
   const includeVocabularyDetails = Boolean(data?.export?.includeVocabularyDetails);
+  const includeVocabularyComments = Boolean(data?.export?.includeVocabularyComments);
+  const vocabularyComments =
+    includeVocabularyComments || includeVocabularyDetails
+      ? await getVocabularyComments()
+      : {};
 
   doc.setProperties({
     title: `${title} - Barrierefreie Fassung`,
@@ -294,6 +335,16 @@ export const exportAccessiblePdf = (data, exportFilename) => {
             writeLines(doc, vocabLines, cursor, { indent: 24, fontSize: 10 });
           }
         }
+        if (includeVocabularyComments && typeVocabLookup[position?.positionType]) {
+          const vocabTerm = typeVocabLookup[position.positionType].name;
+          const comment = vocabularyComments[vocabTerm];
+          if (comment) {
+            writeLines(doc, [`RDF-Kommentar (${vocabTerm}): ${comment}`], cursor, {
+              indent: 24,
+              fontSize: 10,
+            });
+          }
+        }
       });
     }
 
@@ -328,6 +379,16 @@ export const exportAccessiblePdf = (data, exportFilename) => {
               writeLines(doc, vocabLines, cursor, { indent: 28, fontSize: 10 });
             }
           }
+          if (includeVocabularyComments && typeVocabLookup[position?.positionType]) {
+            const vocabTerm = typeVocabLookup[position.positionType].name;
+            const comment = vocabularyComments[vocabTerm];
+            if (comment) {
+              writeLines(doc, [`RDF-Kommentar (${vocabTerm}): ${comment}`], cursor, {
+                indent: 28,
+                fontSize: 10,
+              });
+            }
+          }
         });
       });
     }
@@ -341,6 +402,17 @@ export const exportAccessiblePdf = (data, exportFilename) => {
           fontSize: 11,
         });
         writeLines(doc, orgVocabulary, cursor, { indent: 16, fontSize: 10, after: 2 });
+      }
+    }
+    if (includeVocabularyComments && typeVocabLookup[unit?.type]) {
+      const vocabTerm = typeVocabLookup[unit.type].name;
+      const comment = vocabularyComments[vocabTerm];
+      if (comment) {
+        writeLines(doc, [`RDF-Kommentar (${vocabTerm}): ${comment}`], cursor, {
+          indent: 8,
+          fontSize: 10,
+          after: 2,
+        });
       }
     }
   });

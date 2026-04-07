@@ -520,6 +520,11 @@
                   "type": "boolean",
                   "title": "RDF/Vokabular-Infos im PDF ergänzen",
                   "default": false
+                },
+                "includeVocabularyComments": {
+                  "type": "boolean",
+                  "title": "RDF-Kommentare aus Vokabular ergänzen",
+                  "default": false
                 }
               }
             },
