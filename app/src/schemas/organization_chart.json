@@ -515,6 +515,11 @@
               "properties": {
                 "exportType": {
                   "enum": ["pdf-accessible"]
+                },
+                "includeVocabularyDetails": {
+                  "type": "boolean",
+                  "title": "RDF/Vokabular-Infos im PDF ergänzen",
+                  "default": false
                 }
               }
             },
