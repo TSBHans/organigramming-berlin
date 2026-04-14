@@ -1,7 +1,6 @@
 import jsPDF from "jspdf";
 import { getGenderedPosition } from "./service";
 import typeVocabLookup from "./typeVocabLookup.json";
-import rdfVocab from "./rdfVocab.json";
 
 const PAGE_MARGIN_X = 48;
 const PAGE_MARGIN_TOP = 56;
@@ -33,62 +32,14 @@ const positionTitle = (position = {}) => {
   return getGenderedPosition(rawPositionType, position?.person?.gender) || rawPositionType;
 };
 
-const getVocabularyUri = (prefix, term) => {
-  if (!rdfVocab[prefix] || !term) return "";
-  return `${rdfVocab[prefix]}${term}`;
-};
-
-const organizationVocabularyLines = (org = {}) => {
-  const lines = [];
-  lines.push("RDF-Typ: org:Organization");
-  if (safe(org?.type) && typeVocabLookup[org.type]) {
-    const match = typeVocabLookup[org.type];
-    lines.push(
-      `RDF-Typ (Vokabular): ${match.vocab}:${match.name} (${getVocabularyUri(match.vocab, match.name)})`
-    );
-  }
-  if (safe(org?.uri?.uri)) {
-    lines.push(`RDF-Identifikator (@id): ${org.uri.uri}`);
-  }
-  if (safe(org?.name)) lines.push(`Prädikat skos:prefLabel: ${org.name}`);
-  if (safe(org?.altName)) lines.push(`Prädikat skos:altLabel: ${org.altName}`);
-  if (safe(org?.purpose)) lines.push(`Prädikat org:purpose: ${org.purpose}`);
-  if (safe(org?.contact?.telephone)) lines.push(`Prädikat vcard:tel: ${org.contact.telephone}`);
-  if (safe(org?.contact?.fax)) lines.push(`Prädikat vcard:fax: ${org.contact.fax}`);
-  if (safe(org?.contact?.email)) lines.push(`Prädikat vcard:email: ${org.contact.email}`);
-  if (safe(org?.contact?.website)) lines.push(`Prädikat vcard:url: ${org.contact.website}`);
-  if (safe(org?.address?.street) || safe(org?.address?.housenumber)) {
-    lines.push("Prädikat org:siteAddress / vcard:street-address vorhanden");
-  }
-  if (safe(org?.address?.zipCode)) lines.push(`Prädikat vcard:postal-code: ${org.address.zipCode}`);
-  if (safe(org?.address?.city)) lines.push(`Prädikat vcard:locality: ${org.address.city}`);
-  return lines;
-};
-
-const positionVocabularyLines = (position = {}) => {
-  const lines = [];
-  if (safe(position?.positionType) && typeVocabLookup[position.positionType]) {
-    const match = typeVocabLookup[position.positionType];
-    lines.push(
-      `Prädikat org:role: ${match.vocab}:${match.name} (${getVocabularyUri(match.vocab, match.name)})`
-    );
-  } else if (safe(position?.positionType)) {
-    lines.push(`Prädikat rdfs:label: ${position.positionType}`);
-  }
-  if (safe(position?.positionStatus)) {
-    lines.push(`Prädikat rdfs:comment: ${position.positionStatus}`);
-  }
-  return lines;
-};
-
 const parseVocabularyComments = (turtleText = "") => {
   const commentsByTerm = {};
-  const classBlockRegex = /berorgs:([A-Za-z0-9_]+)\s+a\s+owl:Class\s*;([\s\S]*?)\.\s*/g;
+  const termBlockRegex = /berorgs:([A-Za-z0-9_]+)\s+[\s\S]*?\n\s*\.\s*/g;
 
   let match;
-  while ((match = classBlockRegex.exec(turtleText)) !== null) {
+  while ((match = termBlockRegex.exec(turtleText)) !== null) {
     const term = match[1];
-    const block = match[2];
+    const block = match[0];
     const commentRegex = /rdfs:comment\s+("""[\s\S]*?"""|"[^"]*")@([a-z-]+)\s*;/g;
     let commentMatch;
     while ((commentMatch = commentRegex.exec(block)) !== null) {
@@ -209,12 +160,9 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
 
   const title = safe(data?.document?.title) || "Organigramm";
   const version = safe(data?.document?.version);
-  const includeVocabularyDetails = Boolean(data?.export?.includeVocabularyDetails);
   const includeVocabularyComments = Boolean(data?.export?.includeVocabularyComments);
   const vocabularyComments =
-    includeVocabularyComments || includeVocabularyDetails
-      ? await getVocabularyComments()
-      : {};
+    includeVocabularyComments ? await getVocabularyComments() : {};
 
   doc.setProperties({
     title: `${title} - Barrierefreie Fassung`,
@@ -345,12 +293,6 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
         if (positionContact.length > 0) {
           writeLines(doc, positionContact, cursor, { indent: 24, fontSize: 10 });
         }
-        if (includeVocabularyDetails) {
-          const vocabLines = positionVocabularyLines(position);
-          if (vocabLines.length > 0) {
-            writeLines(doc, vocabLines, cursor, { indent: 24, fontSize: 10 });
-          }
-        }
         if (includeVocabularyComments && typeVocabLookup[position?.positionType]) {
           const vocabTerm = typeVocabLookup[position.positionType].name;
           const comment = vocabularyComments[vocabTerm];
@@ -389,12 +331,6 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
               fontSize: 10,
             }
           );
-          if (includeVocabularyDetails) {
-            const vocabLines = positionVocabularyLines(position);
-            if (vocabLines.length > 0) {
-              writeLines(doc, vocabLines, cursor, { indent: 28, fontSize: 10 });
-            }
-          }
           if (includeVocabularyComments && typeVocabLookup[position?.positionType]) {
             const vocabTerm = typeVocabLookup[position.positionType].name;
             const comment = vocabularyComments[vocabTerm];
@@ -409,17 +345,6 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
       });
     }
 
-    if (includeVocabularyDetails) {
-      const orgVocabulary = organizationVocabularyLines(unit);
-      if (orgVocabulary.length > 0) {
-        writeLines(doc, ["RDF- und Vokabular-Informationen:"], cursor, {
-          indent: 8,
-          fontStyle: "bold",
-          fontSize: 11,
-        });
-        writeLines(doc, orgVocabulary, cursor, { indent: 16, fontSize: 10, after: 2 });
-      }
-    }
     if (includeVocabularyComments && typeVocabLookup[unit?.type]) {
       const vocabTerm = typeVocabLookup[unit.type].name;
       const comment = vocabularyComments[vocabTerm];
