@@ -163,6 +163,19 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
   const includeVocabularyComments = Boolean(data?.export?.includeVocabularyComments);
   const vocabularyComments =
     includeVocabularyComments ? await getVocabularyComments() : {};
+  const usedVocabularyComments = new Map();
+
+  const registerVocabularyReference = (vocabTerm) => {
+    const comment = vocabularyComments[vocabTerm];
+    if (!comment) return null;
+    if (!usedVocabularyComments.has(vocabTerm)) {
+      usedVocabularyComments.set(vocabTerm, {
+        id: `V${usedVocabularyComments.size + 1}`,
+        comment,
+      });
+    }
+    return usedVocabularyComments.get(vocabTerm)?.id || null;
+  };
 
   doc.setProperties({
     title: `${title} - Barrierefreie Fassung`,
@@ -295,12 +308,17 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
         }
         if (includeVocabularyComments && typeVocabLookup[position?.positionType]) {
           const vocabTerm = typeVocabLookup[position.positionType].name;
-          const comment = vocabularyComments[vocabTerm];
-          if (comment) {
-            writeLines(doc, [`RDF-Kommentar (${vocabTerm}): ${comment}`], cursor, {
+          const referenceId = registerVocabularyReference(vocabTerm);
+          if (referenceId) {
+            writeLines(
+              doc,
+              [`Vokabular-Hinweis (${vocabTerm}): siehe Kapitel 2 [${referenceId}]`],
+              cursor,
+              {
               indent: 24,
               fontSize: 10,
-            });
+              }
+            );
           }
         }
       });
@@ -333,12 +351,17 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
           );
           if (includeVocabularyComments && typeVocabLookup[position?.positionType]) {
             const vocabTerm = typeVocabLookup[position.positionType].name;
-            const comment = vocabularyComments[vocabTerm];
-            if (comment) {
-              writeLines(doc, [`RDF-Kommentar (${vocabTerm}): ${comment}`], cursor, {
+            const referenceId = registerVocabularyReference(vocabTerm);
+            if (referenceId) {
+              writeLines(
+                doc,
+                [`Vokabular-Hinweis (${vocabTerm}): siehe Kapitel 2 [${referenceId}]`],
+                cursor,
+                {
                 indent: 28,
                 fontSize: 10,
-              });
+                }
+              );
             }
           }
         });
@@ -347,21 +370,51 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
 
     if (includeVocabularyComments && typeVocabLookup[unit?.type]) {
       const vocabTerm = typeVocabLookup[unit.type].name;
-      const comment = vocabularyComments[vocabTerm];
-      if (comment) {
-        writeLines(doc, [`RDF-Kommentar (${vocabTerm}): ${comment}`], cursor, {
+      const referenceId = registerVocabularyReference(vocabTerm);
+      if (referenceId) {
+        writeLines(
+          doc,
+          [`Vokabular-Hinweis (${vocabTerm}): siehe Kapitel 2 [${referenceId}]`],
+          cursor,
+          {
           indent: 8,
           fontSize: 10,
           after: 2,
-        });
+          }
+        );
       }
     }
   });
+
+  if (includeVocabularyComments && usedVocabularyComments.size > 0) {
+    writeLines(doc, ["2. Vokabular-Kommentare"], cursor, {
+      fontStyle: "bold",
+      fontSize: headingFontSize(2),
+      before: 10,
+      after: 4,
+    });
+
+    usedVocabularyComments.forEach((entry, vocabTerm) => {
+      writeLines(doc, [`[${entry.id}] ${vocabTerm}`], cursor, {
+        fontStyle: "bold",
+        fontSize: 11,
+        indent: 8,
+      });
+      writeLines(doc, [entry.comment], cursor, {
+        fontSize: 10,
+        indent: 16,
+        after: 3,
+      });
+    });
+  }
 
   if (doc.getNumberOfPages() > 3 && doc.outline?.add) {
     doc.outline.add(null, `Organigramm: ${title}`, { pageNumber: 1 });
     doc.outline.add(null, "Inhaltsverzeichnis", { pageNumber: 1 });
     doc.outline.add(null, "Organisationsstruktur", { pageNumber: 1 });
+    if (includeVocabularyComments && usedVocabularyComments.size > 0) {
+      doc.outline.add(null, "Vokabular-Kommentare", { pageNumber: doc.getNumberOfPages() });
+    }
   }
 
   doc.save(`${exportFilename}.pdf`);
