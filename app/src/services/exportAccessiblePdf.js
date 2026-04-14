@@ -164,17 +164,30 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
   const vocabularyComments =
     includeVocabularyComments ? await getVocabularyComments() : {};
   const usedVocabularyComments = new Map();
+  const seenGlossaryTerms = new Set();
+
+  const getShortExplanation = (text = "") => {
+    const clean = safe(text);
+    if (!clean) return "";
+    const firstSentence = clean.split(".")[0];
+    return firstSentence.length > 120
+      ? `${firstSentence.substring(0, 117).trim()}...`
+      : firstSentence;
+  };
 
   const registerVocabularyReference = (vocabTerm) => {
     const comment = vocabularyComments[vocabTerm];
     if (!comment) return null;
     if (!usedVocabularyComments.has(vocabTerm)) {
-      usedVocabularyComments.set(vocabTerm, {
-        id: `V${usedVocabularyComments.size + 1}`,
-        comment,
-      });
+      usedVocabularyComments.set(vocabTerm, { comment });
     }
-    return usedVocabularyComments.get(vocabTerm)?.id || null;
+    const isFirstOccurrence = !seenGlossaryTerms.has(vocabTerm);
+    seenGlossaryTerms.add(vocabTerm);
+    return {
+      vocabTerm,
+      comment,
+      isFirstOccurrence,
+    };
   };
 
   doc.setProperties({
@@ -220,7 +233,7 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
     after: 4,
   });
   if (includeVocabularyComments) {
-    writeLines(doc, ["2. Vokabular-Kommentare"], cursor, {
+    writeLines(doc, ["2. Glossar"], cursor, {
       fontStyle: "normal",
       fontSize: headingFontSize(3),
       indent: 8,
@@ -264,9 +277,12 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
     let unitTypeWithReference = unitType;
     if (includeVocabularyComments && typeVocabLookup[unit?.type]) {
       const vocabTerm = typeVocabLookup[unit.type].name;
-      const referenceId = registerVocabularyReference(vocabTerm);
-      if (referenceId) {
-        unitTypeWithReference = `${unitType} [${referenceId}]`;
+      const reference = registerVocabularyReference(vocabTerm);
+      if (reference) {
+        const hint = reference.isFirstOccurrence
+          ? getShortExplanation(reference.comment)
+          : `siehe Glossar: ${reference.vocabTerm}`;
+        unitTypeWithReference = `${unitType} (${hint})`;
       }
     }
     const purpose = safe(unit?.purpose);
@@ -312,9 +328,12 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
         let positionTypeWithReference = positionType;
         if (includeVocabularyComments && typeVocabLookup[position?.positionType]) {
           const vocabTerm = typeVocabLookup[position.positionType].name;
-          const referenceId = registerVocabularyReference(vocabTerm);
-          if (referenceId) {
-            positionTypeWithReference = `${positionType} [${referenceId}]`;
+          const reference = registerVocabularyReference(vocabTerm);
+          if (reference) {
+            const hint = reference.isFirstOccurrence
+              ? getShortExplanation(reference.comment)
+              : `siehe Glossar: ${reference.vocabTerm}`;
+            positionTypeWithReference = `${positionType} (${hint})`;
           }
         }
         writeLines(
@@ -352,9 +371,12 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
           let positionTypeWithReference = positionType;
           if (includeVocabularyComments && typeVocabLookup[position?.positionType]) {
             const vocabTerm = typeVocabLookup[position.positionType].name;
-            const referenceId = registerVocabularyReference(vocabTerm);
-            if (referenceId) {
-              positionTypeWithReference = `${positionType} [${referenceId}]`;
+            const reference = registerVocabularyReference(vocabTerm);
+            if (reference) {
+              const hint = reference.isFirstOccurrence
+                ? getShortExplanation(reference.comment)
+                : `siehe Glossar: ${reference.vocabTerm}`;
+              positionTypeWithReference = `${positionType} (${hint})`;
             }
           }
           writeLines(
@@ -372,25 +394,22 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
   });
 
   if (includeVocabularyComments && usedVocabularyComments.size > 0) {
-    writeLines(doc, ["2. Vokabular-Kommentare"], cursor, {
+    writeLines(doc, ["2. Glossar"], cursor, {
       fontStyle: "bold",
       fontSize: headingFontSize(2),
       before: 10,
       after: 4,
     });
 
-    usedVocabularyComments.forEach((entry, vocabTerm) => {
-      writeLines(doc, [`[${entry.id}] ${vocabTerm}`], cursor, {
-        fontStyle: "bold",
-        fontSize: 11,
-        indent: 8,
+    [...usedVocabularyComments.entries()]
+      .sort(([termA], [termB]) => termA.localeCompare(termB, "de"))
+      .forEach(([vocabTerm, entry]) => {
+        writeLines(doc, [`- ${vocabTerm}: ${entry.comment}`], cursor, {
+          fontSize: 10,
+          indent: 8,
+          after: 3,
+        });
       });
-      writeLines(doc, [entry.comment], cursor, {
-        fontSize: 10,
-        indent: 16,
-        after: 3,
-      });
-    });
   }
 
   if (doc.getNumberOfPages() > 3 && doc.outline?.add) {
@@ -398,7 +417,7 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
     doc.outline.add(null, "Inhaltsverzeichnis", { pageNumber: 1 });
     doc.outline.add(null, "Organisationsstruktur", { pageNumber: 1 });
     if (includeVocabularyComments && usedVocabularyComments.size > 0) {
-      doc.outline.add(null, "Vokabular-Kommentare", { pageNumber: doc.getNumberOfPages() });
+      doc.outline.add(null, "Glossar", { pageNumber: doc.getNumberOfPages() });
     }
   }
 
