@@ -89,11 +89,27 @@ const parseVocabularyComments = (turtleText = "") => {
   while ((match = classBlockRegex.exec(turtleText)) !== null) {
     const term = match[1];
     const block = match[2];
-    const germanCommentMatch =
-      block.match(/rdfs:comment\s+"""([\s\S]*?)"""@de\s*;/) ||
-      block.match(/rdfs:comment\s+"([^"]*)"@de\s*;/);
-    if (germanCommentMatch && germanCommentMatch[1]) {
-      commentsByTerm[term] = germanCommentMatch[1].trim().replace(/\s+/g, " ");
+    const commentRegex = /rdfs:comment\s+("""[\s\S]*?"""|"[^"]*")@([a-z-]+)\s*;/g;
+    let commentMatch;
+    while ((commentMatch = commentRegex.exec(block)) !== null) {
+      const rawLiteral = commentMatch[1] || "";
+      const languageTag = (commentMatch[2] || "").toLowerCase();
+
+      if (languageTag !== "de") {
+        continue;
+      }
+
+      const normalized = rawLiteral
+        .replace(/^"""/, "")
+        .replace(/"""$/, "")
+        .replace(/^"/, "")
+        .replace(/"$/, "")
+        .trim()
+        .replace(/\s+/g, " ");
+
+      if (normalized) {
+        commentsByTerm[term] = normalized;
+      }
     }
   }
   return commentsByTerm;
