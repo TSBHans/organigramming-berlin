@@ -219,6 +219,14 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
     indent: 8,
     after: 4,
   });
+  if (includeVocabularyComments) {
+    writeLines(doc, ["2. Vokabular-Kommentare"], cursor, {
+      fontStyle: "normal",
+      fontSize: headingFontSize(3),
+      indent: 8,
+      after: 4,
+    });
+  }
   units.forEach(({ unit, depth, numbering }) => {
     const headingLevel = headingLevelFromDepth(depth);
     const headingNumber = formatHeadingNumber(headingLevel, numbering);
@@ -253,12 +261,20 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
     });
 
     const unitType = safe(unit?.type);
+    let unitTypeWithReference = unitType;
+    if (includeVocabularyComments && typeVocabLookup[unit?.type]) {
+      const vocabTerm = typeVocabLookup[unit.type].name;
+      const referenceId = registerVocabularyReference(vocabTerm);
+      if (referenceId) {
+        unitTypeWithReference = `${unitType} [${referenceId}]`;
+      }
+    }
     const purpose = safe(unit?.purpose);
     const address = addressLine(unit?.address);
 
     const metaLines = [
       parentName ? `Übergeordnete Einheit: ${parentName}` : "Übergeordnete Einheit: keine",
-      unitType ? `Art: ${unitType}` : "",
+      unitTypeWithReference ? `Art: ${unitTypeWithReference}` : "",
       purpose ? `Zusatzbezeichnung: ${purpose}` : "",
       address ? `Anschrift: ${address}` : "",
       ...contactLines(unit?.contact),
@@ -293,9 +309,17 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
       writeLines(doc, ["Positionen:"], cursor, { indent: 8, fontStyle: "bold", fontSize: 11 });
       (unit.positions || []).forEach((position, positionIndex) => {
         const positionType = positionTitle(position);
+        let positionTypeWithReference = positionType;
+        if (includeVocabularyComments && typeVocabLookup[position?.positionType]) {
+          const vocabTerm = typeVocabLookup[position.positionType].name;
+          const referenceId = registerVocabularyReference(vocabTerm);
+          if (referenceId) {
+            positionTypeWithReference = `${positionType} [${referenceId}]`;
+          }
+        }
         writeLines(
           doc,
-          [`${positionIndex + 1}) ${positionType}: ${personName(position?.person)}`],
+          [`${positionIndex + 1}) ${positionTypeWithReference}: ${personName(position?.person)}`],
           cursor,
           {
           indent: 16,
@@ -305,21 +329,6 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
         const positionContact = contactLines(position?.person?.contact);
         if (positionContact.length > 0) {
           writeLines(doc, positionContact, cursor, { indent: 24, fontSize: 10 });
-        }
-        if (includeVocabularyComments && typeVocabLookup[position?.positionType]) {
-          const vocabTerm = typeVocabLookup[position.positionType].name;
-          const referenceId = registerVocabularyReference(vocabTerm);
-          if (referenceId) {
-            writeLines(
-              doc,
-              [`Vokabular-Hinweis (${vocabTerm}): siehe Kapitel 2 [${referenceId}]`],
-              cursor,
-              {
-              indent: 24,
-              fontSize: 10,
-              }
-            );
-          }
         }
       });
     }
@@ -340,49 +349,25 @@ export const exportAccessiblePdf = async (data, exportFilename) => {
 
         (department?.positions || []).forEach((position, departmentPositionIndex) => {
           const positionType = positionTitle(position);
+          let positionTypeWithReference = positionType;
+          if (includeVocabularyComments && typeVocabLookup[position?.positionType]) {
+            const vocabTerm = typeVocabLookup[position.positionType].name;
+            const referenceId = registerVocabularyReference(vocabTerm);
+            if (referenceId) {
+              positionTypeWithReference = `${positionType} [${referenceId}]`;
+            }
+          }
           writeLines(
             doc,
-            [`${departmentIndex + 1}.${departmentPositionIndex + 1} ${positionType}: ${personName(position?.person)}`],
+            [`${departmentIndex + 1}.${departmentPositionIndex + 1} ${positionTypeWithReference}: ${personName(position?.person)}`],
             cursor,
             {
               indent: 24,
               fontSize: 10,
             }
           );
-          if (includeVocabularyComments && typeVocabLookup[position?.positionType]) {
-            const vocabTerm = typeVocabLookup[position.positionType].name;
-            const referenceId = registerVocabularyReference(vocabTerm);
-            if (referenceId) {
-              writeLines(
-                doc,
-                [`Vokabular-Hinweis (${vocabTerm}): siehe Kapitel 2 [${referenceId}]`],
-                cursor,
-                {
-                indent: 28,
-                fontSize: 10,
-                }
-              );
-            }
-          }
         });
       });
-    }
-
-    if (includeVocabularyComments && typeVocabLookup[unit?.type]) {
-      const vocabTerm = typeVocabLookup[unit.type].name;
-      const referenceId = registerVocabularyReference(vocabTerm);
-      if (referenceId) {
-        writeLines(
-          doc,
-          [`Vokabular-Hinweis (${vocabTerm}): siehe Kapitel 2 [${referenceId}]`],
-          cursor,
-          {
-          indent: 8,
-          fontSize: 10,
-          after: 2,
-          }
-        );
-      }
     }
   });
 
